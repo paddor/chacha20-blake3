@@ -8,7 +8,7 @@ description = "ChaCha20-BLAKE3: Secure, Simple and Fast encryption for any CPU"
 homepage = "https://kerkour.com/chacha20-blake3"
 repository = "https://github.com/paddor/chacha20-blake3"
 license = "MIT"
-keywords = ["cryptography", "chacha20", "blake3", "encryption", "chacha12", "aead"]
+keywords = ["cryptography", "chacha20", "blake3", "encryption", "aead"]
 categories = ["cryptography"]
 readme = "../README.md"
 
