@@ -6,7 +6,7 @@ edition = "2024"
 rust-version = "1.85"
 description = "ChaCha20-BLAKE3: Secure, Simple and Fast encryption for any CPU"
 homepage = "https://kerkour.com/chacha20-blake3"
-repository = "https://github.com/skerkour/chacha20-blake3"
+repository = "https://github.com/paddor/chacha20-blake3"
 license = "MIT"
 keywords = ["cryptography", "chacha20", "blake3", "encryption", "chacha12", "aead"]
 categories = ["cryptography"]
@@ -16,8 +16,6 @@ readme = "../README.md"
 path = "./chacha20_blake3.rs"
 
 [dependencies]
-chacha = { path = "../chacha", default-features = false }
-
 blake3 = { workspace = true }
 constant_time_eq = { workspace = true }
 zeroize = { workspace = true, optional = true }
@@ -26,8 +24,8 @@ zeroize = { workspace = true, optional = true }
 default = ["std", "zeroize"]
 
 alloc = ["zeroize?/alloc"]
-std = ["alloc", "chacha/std"]
-zeroize = ["dep:zeroize", "blake3/zeroize", "chacha/zeroize"]
+std = ["alloc"]
+zeroize = ["dep:zeroize", "blake3/zeroize"]
 
 
 [dev-dependencies]

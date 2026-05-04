@@ -2,6 +2,11 @@
 
 Simple, Secure and Fast encryption for any CPU.
 
+> **This is a fork of [skerkour/chacha20-blake3](https://github.com/skerkour/chacha20-blake3)
+> published to crates.io while [PR #12](https://github.com/skerkour/chacha20-blake3/pull/12)
+> (add `#[target_feature]` annotations for AVX2/AVX-512 auto-vectorization) is pending upstream.
+> Once that PR is merged and upstream publishes to crates.io, switch your dependency there.**
+
 
 ChaCha20-BLAKE3 is a secure Authenticated Encryption with Associated Data (AEAD) algorithm that is:
 - more secure than classic AEADs by providing full context commitment
@@ -56,7 +61,7 @@ Machine: *AMD EPYC 9R45 (virtualized, AWS ma8.xlarge)*
 `Cargo.toml`
 ```toml
 [dependencies]
-chacha20-blake3 = { git = "https://github.com/skerkour/chacha20-blake3", branch = "main" }
+chacha20-blake3 = "0.9.11"
 ```
 
 ```rust

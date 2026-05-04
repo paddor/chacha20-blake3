@@ -1,6 +1,7 @@
-#![no_std]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![doc = include_str!("README.md")]
 
+mod chacha;
 use chacha::ChaCha20;
 use constant_time_eq::constant_time_eq_32;
 
