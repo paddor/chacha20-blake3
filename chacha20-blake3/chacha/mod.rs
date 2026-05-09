@@ -1,7 +1,7 @@
 
 // aarch64 assumes that NEON instructions are always present
 #[cfg(target_arch = "aarch64")]
-use crate::chacha_neon::chacha_neon;
+use chacha_neon::chacha_neon;
 
 #[cfg(target_arch = "aarch64")]
 mod chacha_neon;

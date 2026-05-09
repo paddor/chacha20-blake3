@@ -61,7 +61,7 @@ Machine: *AMD EPYC 9R45 (virtualized, AWS ma8.xlarge)*
 `Cargo.toml`
 ```toml
 [dependencies]
-chacha20-blake3 = "0.9.11"
+chacha20-blake3 = "0.9.12"
 ```
 
 ```rust
