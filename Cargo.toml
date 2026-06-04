@@ -10,4 +10,4 @@ members = [
 [workspace.dependencies]
 blake3 = { version = "1.8.0", default-features = false, features = ["neon", "wasm32_simd"] }
 constant_time_eq = "0.5.0"
-zeroize = { version = "1", features = ["simd", "derive"] }
+zeroize = { version = "1.8.0", features = ["simd", "derive"] }
