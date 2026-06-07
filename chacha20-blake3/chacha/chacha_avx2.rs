@@ -49,6 +49,14 @@ unsafe fn chacha_avx2_inner<const ROUNDS: usize>(
     let mut counter = extract_counter_from_state(state);
     let mut keystream = [0u8; SIMD_LANES * BLOCK_SIZE];
 
+    // vpshufb masks for byte-aligned rotations (1 instruction instead of shift+shift+or)
+    let rot16 = _mm256_setr_epi8(
+        2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13, 2, 3, 0, 1, 6, 7, 4, 5, 10, 11, 8, 9, 14, 15, 12, 13,
+    );
+    let rot8 = _mm256_setr_epi8(
+        3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14, 3, 0, 1, 2, 7, 4, 5, 6, 11, 8, 9, 10, 15, 12, 13, 14,
+    );
+
     let mut initial_state: [__m256i; STATE_WORDS] = [
         // constant
         _mm256_set1_epi32(state[0] as i32),
@@ -91,7 +99,7 @@ unsafe fn chacha_avx2_inner<const ROUNDS: usize>(
 
         // compute 8 64-byte ChaCha blocks in parallel
         unsafe {
-            chacha20_avx2_8blocks::<ROUNDS>(initial_state, &mut keystream);
+            chacha_avx2_8blocks::<ROUNDS>(initial_state, &mut keystream, rot16, rot8);
         }
 
         // XOR plaintext with keystream
@@ -117,31 +125,33 @@ unsafe fn chacha_avx2_inner<const ROUNDS: usize>(
 /// The keystream is the 8 64-byte blocks computed in parallel.
 /// [ block1 (64 bytes) || block2 (64 bytes) || block3 (64 bytes) || block4 (64 bytes) ... ]
 #[target_feature(enable = "avx2")]
-unsafe fn chacha20_avx2_8blocks<const ROUNDS: usize>(
+unsafe fn chacha_avx2_8blocks<const ROUNDS: usize>(
     initial_state: [__m256i; STATE_WORDS],
     keystream: &mut [u8; SIMD_LANES * 64],
+    rot16: __m256i,
+    rot8: __m256i,
 ) {
     let keystream_ptr = keystream.as_mut_ptr();
 
     unsafe {
-        let mut working_state = initial_state;
+        let mut ws = initial_state;
 
         macro_rules! quarter_round {
             ($a:expr, $b:expr, $c:expr, $d:expr) => {
-                // a += b; d ^= a; d <<<= 16
+                // a += b; d ^= a; d <<<= 16 (vpshufb)
                 $a = _mm256_add_epi32($a, $b);
                 $d = _mm256_xor_si256($d, $a);
-                $d = _mm256_or_si256(_mm256_slli_epi32($d, 16), _mm256_srli_epi32($d, 16));
+                $d = _mm256_shuffle_epi8($d, rot16);
 
                 // c += d; b ^= c; b <<<= 12
                 $c = _mm256_add_epi32($c, $d);
                 $b = _mm256_xor_si256($b, $c);
                 $b = _mm256_or_si256(_mm256_slli_epi32($b, 12), _mm256_srli_epi32($b, 20));
 
-                // a += b; d ^= a; d <<<= 8
+                // a += b; d ^= a; d <<<= 8 (vpshufb)
                 $a = _mm256_add_epi32($a, $b);
                 $d = _mm256_xor_si256($d, $a);
-                $d = _mm256_or_si256(_mm256_slli_epi32($d, 8), _mm256_srli_epi32($d, 24));
+                $d = _mm256_shuffle_epi8($d, rot8);
 
                 // c += d; b ^= c; b <<<= 7
                 $c = _mm256_add_epi32($c, $d);
@@ -152,51 +162,134 @@ unsafe fn chacha20_avx2_8blocks<const ROUNDS: usize>(
 
         for _ in 0..ROUNDS / 2 {
             // column rounds
-            quarter_round!(working_state[0], working_state[4], working_state[8], working_state[12]);
-            quarter_round!(working_state[1], working_state[5], working_state[9], working_state[13]);
-            quarter_round!(working_state[2], working_state[6], working_state[10], working_state[14]);
-            quarter_round!(working_state[3], working_state[7], working_state[11], working_state[15]);
+            quarter_round!(ws[0], ws[4], ws[8], ws[12]);
+            quarter_round!(ws[1], ws[5], ws[9], ws[13]);
+            quarter_round!(ws[2], ws[6], ws[10], ws[14]);
+            quarter_round!(ws[3], ws[7], ws[11], ws[15]);
 
             // diagonal rounds
-            quarter_round!(working_state[0], working_state[5], working_state[10], working_state[15]);
-            quarter_round!(working_state[1], working_state[6], working_state[11], working_state[12]);
-            quarter_round!(working_state[2], working_state[7], working_state[8], working_state[13]);
-            quarter_round!(working_state[3], working_state[4], working_state[9], working_state[14]);
+            quarter_round!(ws[0], ws[5], ws[10], ws[15]);
+            quarter_round!(ws[1], ws[6], ws[11], ws[12]);
+            quarter_round!(ws[2], ws[7], ws[8], ws[13]);
+            quarter_round!(ws[3], ws[4], ws[9], ws[14]);
         }
 
-        // Each iteration of the loop writes a 32-bit word for each block (lane) into keystream.
-        // The first iteration writes the following bytes: block1[0..4], block2[0..4], block3[0..4], block4[0..4], block5[0..4] ...
-        // the second iteration writes block1[4..8], block2[4..8], block3[4..8], block4[4..8], block5[4..8] ...
-        // the third iteration writes block1[4..8], block2[8..12], block3[8..12], block4[8..12], block5[8..12] ...
-        // and so on, for the 16 32-bit words of the ChaCha state
-        for word_index in 0..STATE_WORDS {
-            // first we add the working state to the initial state to get the keystream
-            working_state[word_index] = _mm256_add_epi32(working_state[word_index], initial_state[word_index]);
-
-            // then we convert the SIMD lanes into the keystream bytes
-            let mut lanes = AlignedU32x8([0u32; SIMD_LANES]);
-            _mm256_store_si256(lanes.0.as_mut_ptr() as *mut __m256i, working_state[word_index]);
-
-            // each lane is a 32-bit little-endian word
-            for block in 0..SIMD_LANES {
-                let word = lanes.0[block].to_le_bytes();
-                let byte_offset = (block * STATE_WORDS * 4) + (word_index * 4);
-                core::ptr::copy_nonoverlapping(word.as_ptr(), keystream_ptr.add(byte_offset), 4);
-            }
+        // add initial state to working state
+        for i in 0..STATE_WORDS {
+            ws[i] = _mm256_add_epi32(ws[i], initial_state[i]);
         }
 
-        // let keystream = std::mem::transmute::<&mut [u8; 64 * 8], &mut [u32; STATE_WORDS * 8]>(keystream);
+        // 8x8 transpose of ws[0..8] to extract words 0-7 of each block,
+        // then store as the first 32 bytes of each 64-byte block in the keystream.
+        //
+        // Before transpose: ws[i] = [b0_wi, b1_wi, b2_wi, b3_wi, b4_wi, b5_wi, b6_wi, b7_wi]
+        // After transpose:  row j  = [bj_w0, bj_w1, bj_w2, bj_w3, bj_w4, bj_w5, bj_w6, bj_w7]
+        {
+            let t0 = _mm256_unpacklo_epi32(ws[0], ws[1]);
+            let t1 = _mm256_unpackhi_epi32(ws[0], ws[1]);
+            let t2 = _mm256_unpacklo_epi32(ws[2], ws[3]);
+            let t3 = _mm256_unpackhi_epi32(ws[2], ws[3]);
+            let t4 = _mm256_unpacklo_epi32(ws[4], ws[5]);
+            let t5 = _mm256_unpackhi_epi32(ws[4], ws[5]);
+            let t6 = _mm256_unpacklo_epi32(ws[6], ws[7]);
+            let t7 = _mm256_unpackhi_epi32(ws[6], ws[7]);
 
-        // for word_index in 0..STATE_WORDS {
-        //     // add working state to initial state to get the keystream
-        //     working_state[word_index] = _mm256_add_epi32(working_state[word_index], original_state[word_index]);
+            let u0 = _mm256_unpacklo_epi64(t0, t2);
+            let u1 = _mm256_unpackhi_epi64(t0, t2);
+            let u2 = _mm256_unpacklo_epi64(t1, t3);
+            let u3 = _mm256_unpackhi_epi64(t1, t3);
+            let u4 = _mm256_unpacklo_epi64(t4, t6);
+            let u5 = _mm256_unpackhi_epi64(t4, t6);
+            let u6 = _mm256_unpacklo_epi64(t5, t7);
+            let u7 = _mm256_unpackhi_epi64(t5, t7);
 
-        //     let mut lanes = AlignedU32x8([0u32; 8]);
-        //     _mm256_store_si256(lanes.0.as_mut_ptr() as *mut __m256i, working_state[word_index]);
+            _mm256_storeu_si256(
+                keystream_ptr.add(0 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u0, u4, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(1 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u1, u5, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(2 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u2, u6, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(3 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u3, u7, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(4 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u0, u4, 0x31),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(5 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u1, u5, 0x31),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(6 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u2, u6, 0x31),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(7 * 64) as *mut __m256i,
+                _mm256_permute2x128_si256(u3, u7, 0x31),
+            );
+        }
 
-        //     for block in 0..8 {
-        //         keystream[(block * STATE_WORDS) + word_index] = lanes.0[block].to_le();
-        //     }
-        // }
+        // 8x8 transpose of ws[8..16] to extract words 8-15 of each block,
+        // then store as the second 32 bytes of each 64-byte block in the keystream.
+        {
+            let t0 = _mm256_unpacklo_epi32(ws[8], ws[9]);
+            let t1 = _mm256_unpackhi_epi32(ws[8], ws[9]);
+            let t2 = _mm256_unpacklo_epi32(ws[10], ws[11]);
+            let t3 = _mm256_unpackhi_epi32(ws[10], ws[11]);
+            let t4 = _mm256_unpacklo_epi32(ws[12], ws[13]);
+            let t5 = _mm256_unpackhi_epi32(ws[12], ws[13]);
+            let t6 = _mm256_unpacklo_epi32(ws[14], ws[15]);
+            let t7 = _mm256_unpackhi_epi32(ws[14], ws[15]);
+
+            let u0 = _mm256_unpacklo_epi64(t0, t2);
+            let u1 = _mm256_unpackhi_epi64(t0, t2);
+            let u2 = _mm256_unpacklo_epi64(t1, t3);
+            let u3 = _mm256_unpackhi_epi64(t1, t3);
+            let u4 = _mm256_unpacklo_epi64(t4, t6);
+            let u5 = _mm256_unpackhi_epi64(t4, t6);
+            let u6 = _mm256_unpacklo_epi64(t5, t7);
+            let u7 = _mm256_unpackhi_epi64(t5, t7);
+
+            _mm256_storeu_si256(
+                keystream_ptr.add(0 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u0, u4, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(1 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u1, u5, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(2 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u2, u6, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(3 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u3, u7, 0x20),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(4 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u0, u4, 0x31),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(5 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u1, u5, 0x31),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(6 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u2, u6, 0x31),
+            );
+            _mm256_storeu_si256(
+                keystream_ptr.add(7 * 64 + 32) as *mut __m256i,
+                _mm256_permute2x128_si256(u3, u7, 0x31),
+            );
+        }
     }
 }
