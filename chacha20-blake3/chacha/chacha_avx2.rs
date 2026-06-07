@@ -102,11 +102,22 @@ unsafe fn chacha_avx2_inner<const ROUNDS: usize>(
             chacha_avx2_8blocks::<ROUNDS>(initial_state, &mut keystream, rot16, rot8);
         }
 
-        // XOR plaintext with keystream
-        input_blocks
-            .iter_mut()
-            .zip(keystream)
-            .for_each(|(plaintext, keystream)| *plaintext ^= keystream);
+        // XOR plaintext with keystream using SIMD
+        unsafe {
+            let ks_ptr = keystream.as_ptr();
+            let in_ptr = input_blocks.as_mut_ptr();
+            let full_vectors = input_blocks.len() / 32;
+            for i in 0..full_vectors {
+                let offset = i * 32;
+                let ks = _mm256_loadu_si256(ks_ptr.add(offset) as *const __m256i);
+                let pt = _mm256_loadu_si256(in_ptr.add(offset) as *const __m256i);
+                _mm256_storeu_si256(in_ptr.add(offset) as *mut __m256i, _mm256_xor_si256(pt, ks));
+            }
+            let done = full_vectors * 32;
+            for i in done..input_blocks.len() {
+                *in_ptr.add(i) ^= *ks_ptr.add(i);
+            }
+        }
 
         counter = counter.wrapping_add((input_blocks.len() as u64).div_ceil(BLOCK_SIZE as u64));
     }

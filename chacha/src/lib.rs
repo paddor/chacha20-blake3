@@ -15,6 +15,13 @@ mod chacha_wasm_simd128;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 use chacha_wasm_simd128::chacha_wasm_simd128;
 
+// SSE2 is always available on x86_64
+#[cfg(target_arch = "x86_64")]
+mod chacha_sse2;
+
+#[cfg(target_arch = "x86_64")]
+use chacha_sse2::chacha_sse2;
+
 // import if runtime CPU features detection is enabled or if the target CPU supports the feature
 #[cfg(any(
     all(target_arch = "x86_64", feature = "std"),
@@ -156,7 +163,7 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
         #[cfg(feature = "std")]
         {
             #[cfg(target_arch = "x86_64")]
-            if is_x86_feature_detected!("avx512f") && plaintext.len() >= 128 {
+            if plaintext.len() >= 256 && is_x86_feature_detected!("avx512f") {
                 // SAFETY: we just verified AVX-512 is available via runtime detection.
                 unsafe {
                     chacha_avx512::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
@@ -165,7 +172,7 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
             }
 
             #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-            if is_x86_feature_detected!("avx2") && plaintext.len() >= 128 {
+            if plaintext.len() >= 256 && is_x86_feature_detected!("avx2") {
                 // SAFETY: we just verified AVX2 is available via runtime detection.
                 unsafe {
                     chacha_avx2::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
@@ -187,7 +194,7 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
             }
 
             #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), target_feature = "avx2"))]
-            if plaintext.len() >= 128 {
+            if plaintext.len() >= 256 {
                 // SAFETY: target_feature = "avx2" guarantees AVX2 at compile time.
                 unsafe {
                     chacha_avx2::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
@@ -196,8 +203,21 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
             }
         }
 
+        // SSE2 is always available on x86_64
+        #[cfg(target_arch = "x86_64")]
+        {
+            // SAFETY: SSE2 is guaranteed on x86_64.
+            unsafe {
+                chacha_sse2::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
+            }
+            return;
+        }
+
         // fallback for when SIMD acceleration is not available
-        chacha_generic::<ROUNDS>(&mut self.state, &mut self.last_keystream_block, plaintext);
+        #[allow(unreachable_code)]
+        {
+            chacha_generic::<ROUNDS>(&mut self.state, &mut self.last_keystream_block, plaintext);
+        }
     }
 
     /// Set the ChaCha counter (words 12 and 13). It can be used to move forward and backward in the
