@@ -33,7 +33,7 @@ mod chacha_avx2;
     all(target_arch = "x86_64", feature = "std"),
     all(target_arch = "x86_64", target_feature = "avx2")
 ))]
-use chacha_avx2::chacha_avx2;
+use chacha_avx2::{chacha_avx2, chacha_avx2_4};
 
 // import if runtime CPU features detection is enabled or if the target CPU supports the feature
 #[cfg(any(
@@ -175,7 +175,11 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
             if plaintext.len() >= 256 && is_x86_feature_detected!("avx2") {
                 // SAFETY: we just verified AVX2 is available via runtime detection.
                 unsafe {
-                    chacha_avx2::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
+                    if plaintext.len() >= 512 {
+                        chacha_avx2::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
+                    } else {
+                        chacha_avx2_4::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
+                    }
                 }
                 return;
             }
@@ -197,7 +201,11 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
             if plaintext.len() >= 256 {
                 // SAFETY: target_feature = "avx2" guarantees AVX2 at compile time.
                 unsafe {
-                    chacha_avx2::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
+                    if plaintext.len() >= 512 {
+                        chacha_avx2::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
+                    } else {
+                        chacha_avx2_4::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
+                    }
                 }
                 return;
             }
