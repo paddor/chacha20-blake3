@@ -9,7 +9,7 @@ homepage = "https://kerkour.com/chacha20-blake3"
 repository = "https://github.com/paddor/chacha20-blake3"
 license = "MIT"
 keywords = ["cryptography", "chacha20", "blake3", "encryption", "aead"]
-categories = ["cryptography"]
+categories = ["cryptography", "no-std"]
 readme = "../README.md"
 
 [lib]

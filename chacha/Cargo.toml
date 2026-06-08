@@ -4,10 +4,10 @@ name = "chacha"
 version = "0.1.0"
 edition = "2024"
 description = "Pure-Rust, SIMD-accelerated implementations of the original ChaCha20 / ChaCha12 / ChaCha8 stream ciphers with a 64-bit counter and 64-bit nonce (AVX2, AVX-512, NEON, WASM sim128)"
-repository = "https://github.com/skerkour/chacha20-blake3"
+repository = "https://github.com/paddor/chacha20-blake3"
 license = "MIT"
-keywords = ["cryptography", "chacha20", "encryption", "chacha12", "simd", "wasm", "chacha", "webassembly"]
-categories = ["cryptography", "wasm", "simd"]
+keywords = ["cryptography", "chacha20", "encryption", "chacha", "simd"]
+categories = ["cryptography", "no-std"]
 
 [features]
 default = ["std", "zeroize"]
