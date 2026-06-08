@@ -1,3 +1,5 @@
+#![allow(clippy::erasing_op, clippy::identity_op)]
+
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]

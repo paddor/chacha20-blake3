@@ -29,4 +29,5 @@ zeroize = ["dep:zeroize", "blake3/zeroize"]
 
 
 [dev-dependencies]
+blake3 = { workspace = true }
 hex = "0.4"

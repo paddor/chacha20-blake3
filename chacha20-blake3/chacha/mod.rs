@@ -62,10 +62,6 @@ const CONSTANT: [u32; 4] = [
     0x6b206574, // "te k"
 ];
 
-pub type ChaCha8 = ChaCha<8>;
-pub type ChaCha12 = ChaCha<12>;
-pub type ChaCha20 = ChaCha<20>;
-
 #[cfg_attr(feature = "zeroize", derive(Zeroize, ZeroizeOnDrop))]
 pub struct ChaCha<const ROUNDS: usize> {
     state: [u32; STATE_WORDS],
@@ -336,7 +332,11 @@ fn inject_counter_into_state(state: &mut [u32; STATE_WORDS], counter: u64) {
 
 #[cfg(test)]
 mod test {
-    use super::{ChaCha8, ChaCha12, ChaCha20};
+    use super::ChaCha;
+
+    type ChaCha8 = ChaCha<8>;
+    type ChaCha12 = ChaCha<12>;
+    type ChaCha20 = ChaCha<20>;
 
     struct Test {
         key: [u8; 32],
