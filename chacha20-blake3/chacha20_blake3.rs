@@ -6,7 +6,7 @@ use chacha::ChaCha;
 use constant_time_eq::constant_time_eq_32;
 
 #[cfg(feature = "zeroize")]
-use zeroize::{Zeroize, ZeroizeOnDrop, Zeroizing};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -36,18 +36,18 @@ pub struct ChaChaBlake3<const ROUNDS: usize> {
 
 impl<const ROUNDS: usize> ChaChaBlake3<ROUNDS> {
     pub fn new(key: [u8; 32]) -> Self {
-        return ChaChaBlake3 { key };
+        ChaChaBlake3 { key }
     }
 
     #[cfg(feature = "alloc")]
     pub fn encrypt(&self, nonce: &[u8; 24], plaintext: &[u8], aad: &[u8]) -> Vec<u8> {
         let mut ciphertext = alloc::vec![0u8; plaintext.len() + TAG_SIZE];
-        ciphertext[..plaintext.len()].copy_from_slice(&plaintext);
+        ciphertext[..plaintext.len()].copy_from_slice(plaintext);
 
         let tag = self.encrypt_in_place_detached(nonce, &mut ciphertext[..plaintext.len()], aad);
         ciphertext[plaintext.len()..].copy_from_slice(&tag);
 
-        return ciphertext;
+        ciphertext
     }
 
     #[cfg(feature = "alloc")]
@@ -66,34 +66,41 @@ impl<const ROUNDS: usize> ChaChaBlake3<ROUNDS> {
             aad,
         )?;
 
-        return Ok(plaintext);
+        Ok(plaintext)
     }
 
+    #[cfg_attr(not(feature = "zeroize"), expect(unused_mut))]
     pub fn encrypt_in_place_detached(&self, nonce: &[u8; 24], in_out: &mut [u8], aad: &[u8]) -> [u8; 32] {
         let mut kdf_out = [0u8; 72];
         let mut blake3_kdf = blake3::Hasher::new_keyed(&self.key);
         blake3_kdf.update(nonce);
         blake3_kdf.finalize_xof().fill(&mut kdf_out);
 
-        let encryption_key: [u8; 32] = kdf_out[..32].try_into().unwrap();
-        let authentication_key: [u8; 32] = kdf_out[32..64].try_into().unwrap();
-        let encryption_nonce: [u8; 8] = kdf_out[64..].try_into().unwrap();
+        let mut encryption_key: [u8; 32] = kdf_out[..32].try_into().unwrap();
+        let mut authentication_key: [u8; 32] = kdf_out[32..64].try_into().unwrap();
+        let mut encryption_nonce: [u8; 8] = kdf_out[64..].try_into().unwrap();
 
         ChaCha::<ROUNDS>::new(&encryption_key, &encryption_nonce).xor_keystream(in_out);
 
         let mut mac_hasher = blake3::Hasher::new_keyed(&authentication_key);
         mac_hasher.update(aad);
         mac_hasher.update(&(aad.len() as u64).to_le_bytes());
-        mac_hasher.update(&in_out);
+        mac_hasher.update(in_out);
         mac_hasher.update(&(in_out.len() as u64).to_le_bytes());
         let tag = mac_hasher.finalize();
 
         #[cfg(feature = "zeroize")]
-        kdf_out.zeroize();
+        {
+            kdf_out.zeroize();
+            encryption_key.zeroize();
+            authentication_key.zeroize();
+            encryption_nonce.zeroize();
+        }
 
-        return tag.into();
+        tag.into()
     }
 
+    #[cfg_attr(not(feature = "zeroize"), expect(unused_mut))]
     pub fn decrypt_in_place_detached(
         &self,
         nonce: &[u8; 24],
@@ -106,27 +113,33 @@ impl<const ROUNDS: usize> ChaChaBlake3<ROUNDS> {
         blake3_kdf.update(nonce);
         blake3_kdf.finalize_xof().fill(&mut kdf_out);
 
-        let encryption_key: [u8; 32] = kdf_out[..32].try_into().unwrap();
-        let authentication_key: [u8; 32] = kdf_out[32..64].try_into().unwrap();
-        let encryption_nonce: [u8; 8] = kdf_out[64..].try_into().unwrap();
+        let mut encryption_key: [u8; 32] = kdf_out[..32].try_into().unwrap();
+        let mut authentication_key: [u8; 32] = kdf_out[32..64].try_into().unwrap();
+        let mut encryption_nonce: [u8; 8] = kdf_out[64..].try_into().unwrap();
 
         let mut mac_hasher = blake3::Hasher::new_keyed(&authentication_key);
         mac_hasher.update(aad);
         mac_hasher.update(&(aad.len() as u64).to_le_bytes());
-        mac_hasher.update(&ciphertext);
+        mac_hasher.update(ciphertext);
         mac_hasher.update(&(ciphertext.len() as u64).to_le_bytes());
         let mac = mac_hasher.finalize();
 
-        if !constant_time_eq_32(mac.as_bytes(), tag) {
-            return Err(Error {});
-        }
-
-        ChaCha::<ROUNDS>::new(&encryption_key, &encryption_nonce).xor_keystream(ciphertext);
+        let result = if !constant_time_eq_32(mac.as_bytes(), tag) {
+            Err(Error {})
+        } else {
+            ChaCha::<ROUNDS>::new(&encryption_key, &encryption_nonce).xor_keystream(ciphertext);
+            Ok(())
+        };
 
         #[cfg(feature = "zeroize")]
-        Zeroizing::new(encryption_key).zeroize();
+        {
+            kdf_out.zeroize();
+            encryption_key.zeroize();
+            authentication_key.zeroize();
+            encryption_nonce.zeroize();
+        }
 
-        return Ok(());
+        result
     }
 }
 
@@ -218,6 +231,6 @@ impl<const ROUNDS: usize> Session<ROUNDS> {
     }
 
     fn advance_counter(&mut self, bytes: usize) {
-        self.block_counter += (bytes as u64).div_ceil(64);
+        self.block_counter = self.block_counter.wrapping_add((bytes as u64).div_ceil(64));
     }
 }

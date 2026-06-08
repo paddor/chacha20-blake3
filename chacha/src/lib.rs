@@ -189,7 +189,7 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
         #[cfg(not(feature = "std"))]
         {
             #[cfg(all(target_arch = "x86_64", target_feature = "avx512f"))]
-            if plaintext.len() >= 128 {
+            if plaintext.len() >= 256 {
                 // SAFETY: target_feature = "avx512f" guarantees AVX-512 at compile time.
                 unsafe {
                     chacha_avx512::<ROUNDS>(&mut self.state, plaintext, &mut self.last_keystream_block);
