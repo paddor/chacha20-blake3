@@ -1,3 +1,4 @@
+#![expect(clippy::incompatible_msrv)]
 use core::arch::x86_64::*;
 
 use super::{BLOCK_SIZE, STATE_WORDS, extract_counter_from_state, inject_counter_into_state};

@@ -20,8 +20,8 @@ fn bench(c: &mut Criterion) {
         let chacha12_blake3_cipher = ChaCha12Blake3::new(key);
         let chacha20_blake3_cipher = ChaCha20Blake3::new(key);
         let chacha20_blake3_upstream_cipher = ChaCha20Blake3Upstream::new(key);
-        let xchacha20poly1305_cipher = XChaCha20Poly1305::new(&key.try_into().unwrap());
-        let aes_256_gcm_cipher = Aes256Gcm::new(&key.try_into().unwrap());
+        let xchacha20poly1305_cipher = XChaCha20Poly1305::new(&key.into());
+        let aes_256_gcm_cipher = Aes256Gcm::new(&key.into());
 
         let auth_key = [0u8; 32];
 

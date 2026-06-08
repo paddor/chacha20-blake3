@@ -110,16 +110,16 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
         state[14] = u32::from_le_bytes(nonce[0..4].try_into().unwrap());
         state[15] = u32::from_le_bytes(nonce[4..8].try_into().unwrap());
 
-        return ChaCha {
+        ChaCha {
             state,
             last_keystream_block: [0u8; BLOCK_SIZE],
             last_keystream_block_index: 0,
-        };
+        }
     }
 
     /// XOR `plaintext` with the ChaCha keystream.
     pub fn xor_keystream(&mut self, mut plaintext: &mut [u8]) {
-        if plaintext.len() == 0 {
+        if plaintext.is_empty() {
             return;
         }
 
@@ -239,7 +239,7 @@ impl<const ROUNDS: usize> ChaCha<ROUNDS> {
 
 #[inline]
 fn chacha_generic<const ROUNDS: usize>(
-    mut state: &mut [u32; STATE_WORDS],
+    state: &mut [u32; STATE_WORDS],
     last_keystream_block: &mut [u8; BLOCK_SIZE],
     plaintext: &mut [u8],
 ) {
@@ -249,7 +249,7 @@ fn chacha_generic<const ROUNDS: usize>(
 
     // process the input by blocks of 64 bytes
     for plaintext_block in plaintext.chunks_mut(BLOCK_SIZE) {
-        inject_counter_into_state(&mut state, counter);
+        inject_counter_into_state(state, counter);
 
         // prepare temporary (working) state
         let mut tmp_state = *state;
@@ -298,7 +298,7 @@ fn chacha_generic<const ROUNDS: usize>(
 
     inject_counter_into_state(state, counter);
 
-    if plaintext.len() % BLOCK_SIZE != 0 {
+    if !plaintext.len().is_multiple_of(BLOCK_SIZE) {
         last_keystream_block.copy_from_slice(&keystream);
     }
 }
@@ -328,7 +328,7 @@ const fn quarter_round(state: &mut [u32; 16], a: usize, b: usize, c: usize, d: u
 
 #[inline(always)]
 fn extract_counter_from_state(state: &[u32; STATE_WORDS]) -> u64 {
-    return ((state[13] as u64) << 32) | (state[12] as u64);
+    ((state[13] as u64) << 32) | (state[12] as u64)
 }
 
 #[inline(always)]

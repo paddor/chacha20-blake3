@@ -127,7 +127,7 @@ unsafe fn chacha_avx2_inner<const ROUNDS: usize>(
 
     inject_counter_into_state(state, counter);
 
-    if input.len() % BLOCK_SIZE != 0 {
+    if !input.len().is_multiple_of(BLOCK_SIZE) {
         let last_keystream_block_index = ((input.len() - 1) / BLOCK_SIZE) % SIMD_LANES;
         let last_keystream_block_offset = last_keystream_block_index * BLOCK_SIZE;
         last_keystream_block
@@ -138,6 +138,7 @@ unsafe fn chacha_avx2_inner<const ROUNDS: usize>(
 /// Compute 8 64-byte ChaCha blocks in parallel using AVX2 vectors.
 /// The keystream is the 8 64-byte blocks computed in parallel.
 /// [ block1 (64 bytes) || block2 (64 bytes) || block3 (64 bytes) || block4 (64 bytes) ... ]
+#[expect(clippy::erasing_op, clippy::identity_op)]
 #[target_feature(enable = "avx2")]
 unsafe fn chacha_avx2_8blocks<const ROUNDS: usize>(
     initial_state: [__m256i; STATE_WORDS],
@@ -389,7 +390,7 @@ unsafe fn chacha_avx2_4_inner<const ROUNDS: usize>(
 
     inject_counter_into_state(state, counter);
 
-    if input.len() % BLOCK_SIZE != 0 {
+    if !input.len().is_multiple_of(BLOCK_SIZE) {
         let last_keystream_block_index = ((input.len() - 1) / BLOCK_SIZE) % 4;
         let last_keystream_block_offset = last_keystream_block_index * BLOCK_SIZE;
         last_keystream_block
@@ -397,6 +398,7 @@ unsafe fn chacha_avx2_4_inner<const ROUNDS: usize>(
     }
 }
 
+#[expect(clippy::too_many_arguments)]
 #[target_feature(enable = "avx2")]
 unsafe fn chacha_avx2_4blocks<const ROUNDS: usize>(
     ia: __m256i,

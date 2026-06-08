@@ -10,7 +10,7 @@ struct Test {
 
 #[test]
 fn chacha20_blake3_test_vectors() {
-    let tests = vec![
+    let tests = [
         Test {
             plaintext: [].to_vec(),
             key: hex::decode("0000000000000000000000000000000000000000000000000000000000000000")
